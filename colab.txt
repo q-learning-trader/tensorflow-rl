@@ -1,0 +1,22 @@
+1.
+function ClickConnect(){
+console.log("Working");
+document.querySelectorAll("paper-icon-button")[6].click()
+document.querySelectorAll("paper-icon-button")[7].click()
+}
+setInterval(ClickConnect,80000)
+
+'''
+Ctrl+ Shift + i to open inspector view . Then goto console.
+
+2.
+function ClickConnect(){
+console.log("Working");
+document.querySelector("colab-toolbar-button#connect").click()
+}
+setInterval(ClickConnect,120000)
+
+# colab-toolbar-button#connect が Null になったら、1番のコードを貼り付け実行する
+
+from https://medium.com/@shivamrawat_756/how-to-prevent-google-colab-from-disconnecting-717b88a128c0
+'''
