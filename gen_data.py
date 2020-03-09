@@ -6,7 +6,6 @@ import ta
 import tensorflow as tf
 from sklearn.preprocessing import MinMaxScaler
 
-
 def gen_data(file_path="gbpjpy15.csv"):
     try:
         print("load file")
@@ -17,12 +16,14 @@ def gen_data(file_path="gbpjpy15.csv"):
 
     df["Close1"] = df["Close"] * 100
 
-    ma = np.array(ta.trend.ema(df["Close1"], 14) - ta.trend.ema(df["Close1"], 7)).reshape((-1,1))
-    macd = np.array(ta.trend.macd_diff(df["Close1"])).reshape((-1,1))
+    # returns = np.array(np.log(df["Close"] / df["Close"].shift(1))).reshape((-1,1)) * 1000
+    # ma = np.array(np.log(ta.trend.ema(df["Close1"], 14) / ta.trend.ema(df["Close1"], 7))).reshape((-1,1)) * 1000
+    # macd = np.array(ta.trend.macd_diff(df["Close1"])).reshape((-1,1))
     rsi = np.array(ta.momentum.rsi(df["Close"]) - ta.momentum.rsi(df["Close"], 7)).reshape((-1,1))
     stoch = np.array(ta.momentum.stoch_signal(df["High"], df["Low"], df["Close"]) - ta.momentum.stoch(df["High"], df["Low"], df["Close"])).reshape((-1,1))
 
-    x = np.concatenate([ma, macd, rsi, stoch], -1)
+    x = np.concatenate([rsi, stoch], -1)
+    # x = returns
 
     y = np.array(df[["Open"]])
     atr = np.array(ta.volatility.average_true_range(df["High"], df["Low"], df["Close"]))
