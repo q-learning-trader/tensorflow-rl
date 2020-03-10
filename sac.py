@@ -46,13 +46,15 @@ def output(x, name):
 def build_actor(dim):
     inputs = tf.keras.layers.Input(dim)
 
-    x = tf.keras.layers.GlobalAveragePooling1D()(inputs)
+
+    x = tf.keras.layers.Dense(64, "elu")(inputs)
     x = tf.keras.layers.Dense(32, "elu")(x)
-    x = tf.keras.layers.Dense(64, "elu")(x)
+    x = tf.keras.layers.GlobalAveragePooling1D()(x)
 
     log_std = tf.keras.layers.Dense(1)(x)
     mu = tf.keras.layers.Dense(1)(x)
 
+    # mu = tf.clip_by_value(tf.abs(mu), 0.1, 10) * (tf.abs(mu) / mu)
     log_std = tf.clip_by_value(log_std, -20, 2.)
     std = tf.exp(log_std)
 
@@ -112,7 +114,7 @@ class Agent(base.Base_Agent):
         _, _, target_v = self.target_model.critic.predict_on_batch([new_states, actions])
         q1, _, _ = self.model.critic.predict_on_batch([states, actions])
 
-        q_backup = rewards + 0.1 * target_v.numpy()
+        q_backup = rewards + self.gamma * target_v.numpy()
 
         return np.abs(q_backup - q1)
 
@@ -131,14 +133,14 @@ class Agent(base.Base_Agent):
             q1_pi, q2_pi, _ = self.model.critic.predict_on_batch([states, policy])
             # min_q_pi = tf.minimum(q1_pi, q2_pi)
             # q1, q2, v = self.model.critic.predict_on_batch([states, actions])
-            p_loss = tf.reduce_mean(ent_coef * logp_pi - q1_pi)
+            p_loss = tf.reduce_mean((ent_coef * logp_pi - q1_pi) ** 2) * .5
         ################################################################################
         with tf.GradientTape() as v_tape:
             _, _, target_v = self.target_model.critic.predict_on_batch([new_states, actions])
             q1, q2, v = self.model.critic.predict_on_batch([states, actions])
             min_q_pi = tf.minimum(q1_pi, q2_pi)
 
-            q_backup = rewards + 0.1 * target_v
+            q_backup = rewards + self.gamma * target_v
 
             q1_loss = tf.reduce_mean((q_backup - q1) ** 2) * .5
             q2_loss = tf.reduce_mean((q_backup - q2) ** 2) * .5
@@ -190,6 +192,9 @@ class Agent(base.Base_Agent):
         return policy
 
     def save(self, i):
+        if (i + 1) % 2000 == 0 and self.gamma != 0.99:
+            self.gamma += 0.2
+            self.gamma = min(self.gamma, 0.99)
         self.restore = True
         self.i = i
         self.model.save_weights("sac/sac")

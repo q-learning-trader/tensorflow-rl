@@ -32,6 +32,7 @@ class Base_Agent:
         self.restore = restore
         self.lr = lr
         self.n = n
+        self.gamma = 0.1
 
         self.build()
 
@@ -103,10 +104,10 @@ class Base_Agent:
 
             action = self.policy(df, i)
             if types == "PG":
-                q = action
+                q = action[:]
                 leverage = action * 5
-                leverage = np.clip(np.abs(leverage), 1, 5) * (np.abs(leverage) / leverage)
-                action = [0 if i >= 0 else 1 for i in leverage]
+                leverage = np.clip(np.abs(leverage), 1, 5)
+                action = [0 if i >= 0 else 1 for i in q]
                 self.rewards.reward(trend, high, low, action, leverage, atr, scale_atr)
             else:
                 self.rewards.reward(trend, high, low, action, atr, scale_atr)
@@ -123,7 +124,7 @@ class Base_Agent:
                     if index == 0:
                         rewards[index] = 0
                     else:
-                        rewards[index] = np.log(r / self.rewards.total_gain[index - 1]) * 1000
+                        rewards[index] = int(np.log(r / self.rewards.total_gain[index - 1]) * 100 * 10 ** 4) / (10 ** 2)
                         if rewards[index] == -np.inf:
                             rewards[index] = 0
 
