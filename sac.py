@@ -51,8 +51,8 @@ def build_actor(dim):
     x = tf.keras.layers.Dense(32, "elu")(x)
     x = tf.keras.layers.GlobalAveragePooling1D()(x)
 
-    log_std = tf.keras.layers.Dense(1)(x)
-    mu = tf.keras.layers.Dense(1)(x)
+    log_std = tf.keras.layers.Dense(2)(x)
+    mu = tf.keras.layers.Dense(2)(x)
 
     # mu = tf.clip_by_value(tf.abs(mu), 0.1, 10) * (tf.abs(mu) / mu)
     log_std = tf.clip_by_value(log_std, -20, 2.)
@@ -68,7 +68,7 @@ def build_actor(dim):
 
 def build_critic(dim):
     states = tf.keras.layers.Input(dim, name="states")
-    action = tf.keras.layers.Input((1,), name="action")
+    action = tf.keras.layers.Input((2,), name="action")
 
     x = base.bese_net(states)
 
@@ -108,7 +108,7 @@ class Agent(base.Base_Agent):
     def sample(self, memory):
         states = np.array([a[0] for a in memory], np.float32)
         new_states = np.array([a[3] for a in memory], np.float32)
-        actions = np.array([a[1] for a in memory]).reshape((-1, 1))
+        actions = np.array([a[1] for a in memory]).reshape((-1, 2))
         rewards = np.array([a[2] for a in memory], np.float32).reshape((-1, 1))
 
         _, _, target_v = self.target_model.critic.predict_on_batch([new_states, actions])
@@ -123,7 +123,7 @@ class Agent(base.Base_Agent):
 
         states = np.array([a[0][0] for a in replay], np.float32)
         new_states = np.array([a[0][3] for a in replay], np.float32)
-        actions = np.array([a[0][1] for a in replay]).reshape((-1, 1))
+        actions = np.array([a[0][1] for a in replay]).reshape((-1, 2))
         rewards = np.array([a[0][2] for a in replay], np.float32).reshape((-1, 1))
 
         ent_coef = tf.exp(self.model.log_ent_coef)
@@ -133,7 +133,7 @@ class Agent(base.Base_Agent):
             q1_pi, q2_pi, _ = self.model.critic.predict_on_batch([states, policy])
             # min_q_pi = tf.minimum(q1_pi, q2_pi)
             # q1, q2, v = self.model.critic.predict_on_batch([states, actions])
-            p_loss = tf.reduce_mean((ent_coef * logp_pi - q1_pi) ** 2) * .5
+            p_loss = tf.reduce_mean(ent_coef * logp_pi - q1_pi)
         ################################################################################
         with tf.GradientTape() as v_tape:
             _, _, target_v = self.target_model.critic.predict_on_batch([new_states, actions])
@@ -192,9 +192,6 @@ class Agent(base.Base_Agent):
         return policy
 
     def save(self, i):
-        if (i + 1) % 2000 == 0 and self.gamma != 0.99:
-            self.gamma += 0.2
-            self.gamma = min(self.gamma, 0.99)
         self.restore = True
         self.i = i
         self.model.save_weights("sac/sac")

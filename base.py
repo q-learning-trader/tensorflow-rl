@@ -105,9 +105,8 @@ class Base_Agent:
             action = self.policy(df, i)
             if types == "PG":
                 q = action[:]
-                leverage = action * 5
-                leverage = np.clip(np.abs(leverage), 1, 5)
-                action = [0 if i >= 0 else 1 for i in q]
+                action, leverage = action[:,0], np.clip(np.abs(action[:,1] * 5), .5, 5)
+                action = [2 if i >= -1.5 and i < -0.5 else 1 if i >= -.5 and i < .5 else 0 for i in action * 1.5]
                 self.rewards.reward(trend, high, low, action, leverage, atr, scale_atr)
             else:
                 self.rewards.reward(trend, high, low, action, atr, scale_atr)
@@ -146,6 +145,10 @@ class Base_Agent:
             if reset > 50:
                 self.train()
             self.lr_decay(i)
+
+            if self.gamma != 0.4:
+                self.gamma = self.gamma + (i * 1e-5)
+                self.gamma = min(0.4, self.gamma)
             reset += 1
 
             if i % 2000 == 0:
