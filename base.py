@@ -9,14 +9,20 @@ from new_rewards import Reward, Reward2
 import numpy as np
 
 def bese_net(inputs):
-    x1 = tf.keras.layers.Conv1D(48, 3, padding="same", activation="elu")(inputs)
-    x2 = tf.keras.layers.Conv1D(48, 3, dilation_rate=2, padding="same", activation="elu")(inputs)
-    x3 = tf.keras.layers.Conv1D(48, 3, dilation_rate=4, padding="same", activation="elu")(inputs)
-    x = x1 + x2 + x3
-    b = tf.keras.layers.Conv1D(48, 1, padding="same", activation="elu")(inputs)
+    x1 = tf.keras.layers.Conv1D(48, 3, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x2 = tf.keras.layers.Conv1D(48, 3, dilation_rate=2, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
+    x2 = tf.keras.layers.BatchNormalization()(x2)
+    x3 = tf.keras.layers.Conv1D(48, 3, dilation_rate=4, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
+    x3 = tf.keras.layers.BatchNormalization()(x3)
+    x4 = tf.keras.layers.Conv1D(48, 3, dilation_rate=6, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
+    x4 = tf.keras.layers.BatchNormalization()(x4)
+    x = x1 + x2 + x3 + x4
+    b = tf.keras.layers.Conv1D(48, 1, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
     x = tf.keras.layers.Concatenate()([x, b])
     #
-    x = tf.keras.layers.Conv1D(328, 3, padding="same", activation="elu")(x)
+    x = tf.keras.layers.Conv1D(328, 3, padding="same", activation="elu", kernel_initializer="he_normal")(x)
+    x = tf.keras.layers.BatchNormalization()(x)
     # x = tf.keras.layers.Conv1D(328*2, 3, padding="same", activation="relu")(x)
     # x = tf.keras.layers.Conv1D(328*4, 3, padding="same", activation="relu")(x)
 
@@ -32,7 +38,7 @@ class Base_Agent:
         self.restore = restore
         self.lr = lr
         self.n = n
-        self.gamma = 0.1
+        self.gamma = 0.4
 
         self.build()
 
@@ -60,6 +66,9 @@ class Base_Agent:
     def lr_decay(self, i):
         pass
 
+    def gamma_updae(self, i):
+        pass
+
     def nstep(self, r):
         discount_r = 0.0
         for r in r:
@@ -81,7 +90,7 @@ class Base_Agent:
         pass
 
     def run(self, train=True, types="DQN"):
-        i = 100000000 if train else 6
+        i = 10000000 if train else 6
         start = 0 if not self.restore else self.i
         start = start if train else i-1
         reset = 0
@@ -105,8 +114,9 @@ class Base_Agent:
             action = self.policy(df, i)
             if types == "PG":
                 q = action[:]
-                action, leverage = action[:,0], np.clip(np.abs(action[:,1] * 5), .5, 5)
-                action = [2 if i >= -1.5 and i < -0.5 else 1 if i >= -.5 and i < .5 else 0 for i in action * 1.5]
+                action, leverage = action[:,0], [i * 2.5 if i > 0 else i * .5 for i in action[:,1]]
+                action = [0 if i > 0 else 1 for i in action]
+                # action = [2 if i >= 0 and i < .5 else 0 if i >= .5 and i < 1. else 1 for i in np.abs(action) * 1.5]
                 self.rewards.reward(trend, high, low, action, leverage, atr, scale_atr)
             else:
                 self.rewards.reward(trend, high, low, action, atr, scale_atr)
@@ -145,10 +155,11 @@ class Base_Agent:
             if reset > 50:
                 self.train()
             self.lr_decay(i)
+            self.gamma_updae(i)
 
-            if self.gamma != 0.4:
-                self.gamma = self.gamma + (i * 1e-5)
-                self.gamma = min(0.4, self.gamma)
+            # if self.gamma != 0.3:
+            #     self.gamma = self.gamma + (i * 1e-5)
+            #     self.gamma = min(0.3, self.gamma)
             reset += 1
 
             if i % 2000 == 0:

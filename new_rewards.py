@@ -126,8 +126,9 @@ class Reward2(Reward):
         for action, leverage, trend, idx, atr, scale_atr in zip(action, leverage, trend, range(len(high)), atr, scale_atr):
 
             if old_action == None and position == None and self.assets > self.minimum_required_margin * 2 and action != 2:
-                self.minimum_required_margin = trend * self.pip_cost / (self.leverage * abs(leverage))
+                self.minimum_required_margin = trend * self.pip_cost / self.leverage
                 lot = self.assets * self.available_assets_rate / self.minimum_required_margin * self.min_lots
+                lot += lot * leverage
                 self.lot = int(lot * 10 ** 2) / (10 ** 2)
 
                 self.positions = trend + self.spread if action == 0 else trend - self.spread
@@ -160,8 +161,9 @@ class Reward2(Reward):
                                 self.positions = None
                                 old_action = None
                             else:
-                                self.minimum_required_margin = trend * self.pip_cost / (self.leverage * abs(leverage))
+                                self.minimum_required_margin = trend * self.pip_cost / self.leverage
                                 lot = self.assets * self.available_assets_rate / self.minimum_required_margin * self.min_lots
+                                lot += lot * leverage
                                 self.lot = int(lot * 10 ** 2) / (10 ** 2)
                                 self.positions = trend + self.spread if action == 0 else trend - self.spread
                                 self.tp = min(abs(self.max_los_cut), atr * self.pip_cost)
