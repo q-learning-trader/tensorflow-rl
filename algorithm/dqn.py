@@ -10,6 +10,11 @@ import base
 
 from new_rewards import Reward
 
+def softmax(x):
+    """Compute softmax values for each sets of scores in x."""
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum()
+
 def build_model(dim=(10, 4)):
     inputs = tf.keras.layers.Input(dim)
 
@@ -17,9 +22,11 @@ def build_model(dim=(10, 4)):
 
     tensor_action, tensor_validation = tf.split(x, 2, 1)
     v = tf.keras.layers.Dense(328, "elu", kernel_initializer="he_normal")(tensor_validation)
+    # v = tf.keras.layers.BatchNormalization()(v)
     v = tf.keras.layers.Dense(1, name="v")(v)
     a = tf.keras.layers.Dense(328, "elu", kernel_initializer="he_normal")(tensor_action)
-    a = tf.keras.layers.Dense(3, name="a")(a)
+    # a = tf.keras.layers.BatchNormalization()(a)
+    a = tf.keras.layers.Dense(2, name="a")(a)
     out = v + tf.subtract(a, tf.reduce_mean(a, axis=1, keepdims=True))
 
     return tf.keras.Model(inputs, out)
@@ -29,6 +36,8 @@ def build_model(dim=(10, 4)):
 
 class Agent(base.Base_Agent):
     def build(self):
+        self.gamma = 0.
+        self.epsilon = 0.1
         if self.restore:
             self.i = np.load("dqn_epoch.npy")
             self.model = tf.keras.models.load_model("dqn.h5")
@@ -83,14 +92,20 @@ class Agent(base.Base_Agent):
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
     def lr_decay(self, i):
-        lr = self.lr * (1 / (1 + 1e-6 * i))
+        lr = self.lr * 0.0001 ** (i / 10000000)
         self.model.optimizer.lr.assign(lr)
 
+    def gamma_updae(self, i):
+        self.gamma = 1 - (0.6 + (1 - 0.6) * (np.exp(-0.0001 * i)))
+
     def policy(self, state, i):
+        epsilon = self.epsilon + (1 - self.epsilon) * (np.exp(-0.0001 * i))
         q = self.model.predict_on_batch(state).numpy()
+        q = np.abs(q) / np.sum(np.abs(q),1).reshape((-1,1)) * (np.abs(q) / q)
 
         if (i + 1) % 5 != 0:
-            action = np.array([np.argmax(i) if 0.1 < np.random.rand() else np.random.randint(3) for i in q])
+            q += 0.05 * np.random.randn(q.shape[0],q.shape[1])
+            action = np.array([np.argmax(i) if epsilon < np.random.rand() else np.random.randint(2) for i in q])
         else:
             action = np.argmax(q, -1)
 

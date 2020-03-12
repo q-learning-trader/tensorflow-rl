@@ -4,6 +4,7 @@ import tensorflow as tf
 
 from new_rewards import *
 import base
+from gym.spaces import Box
 
 EPS = 1e-10
 
@@ -46,10 +47,13 @@ def output(x, name):
 def build_actor(dim):
     inputs = tf.keras.layers.Input(dim)
 
-
-    x = tf.keras.layers.Dense(64, "elu")(inputs)
+    x = tf.keras.layers.GlobalAveragePooling1D()(inputs)
     x = tf.keras.layers.Dense(32, "elu")(x)
-    x = tf.keras.layers.GlobalAveragePooling1D()(x)
+    x = tf.keras.layers.Dropout(0.3)(x)
+    # x = tf.keras.layers.AlphaDropout(0.1)(x)
+    x = tf.keras.layers.Dense(32, "elu")(x)
+    x = tf.keras.layers.Dropout(.3)(x)
+    # x = tf.keras.layers.AlphaDropout(0.1)(x)
 
     log_std = tf.keras.layers.Dense(2)(x)
     mu = tf.keras.layers.Dense(2)(x)
@@ -81,7 +85,7 @@ def build_critic(dim):
 
 
 class Model(tf.keras.Model):
-    def __init__(self, dim=(10, 2)):
+    def __init__(self, dim=(10, 4)):
         super(Model, self).__init__()
         self.actor = build_actor(dim)
         self.critic = build_critic(dim)
@@ -91,6 +95,10 @@ class Model(tf.keras.Model):
 
 class Agent(base.Base_Agent):
     def build(self):
+        self.gamma = 0.2
+        self.epock = 0
+        self.aciton_space = Box(np.array([-1.,-1.]), np.array([1., 1.]))
+
         self.model = Model()
         self.target_model = Model()
 
@@ -159,37 +167,47 @@ class Agent(base.Base_Agent):
         self.memory.batch_update(tree_idx, ae)
 
         gradients = v_tape.gradient(v_loss, self.model.critic.trainable_variables)
-        # gradients = [(tf.clip_by_value(grad, -1.0, 1.0))
-        #              for grad in gradients]
+        gradients = [(tf.clip_by_value(grad, -10.0, 10.0))
+                     for grad in gradients]
         self.v_opt.apply_gradients(zip(gradients, self.model.critic.trainable_variables))
 
-        gradients = p_tape.gradient(p_loss, self.model.actor.trainable_variables)
-        # gradients = [(tf.clip_by_value(grad, -.1, .1))
-        #              for grad in gradients]
+        if self.epock >= 50 and self.epock % 5 == 0:
+            gradients = p_tape.gradient(p_loss, self.model.actor.trainable_variables)
+            gradients = [(tf.clip_by_value(grad, -1., 1.))
+                         for grad in gradients]
+            self.p_opt.apply_gradients(zip(gradients, self.model.actor.trainable_variables))
 
-        self.p_opt.apply_gradients(zip(gradients, self.model.actor.trainable_variables))
+            self.target_model.critic.set_weights(
+                (1 - 0.005) * np.array(self.target_model.critic.get_weights()) + 0.005 * np.array(
+                    self.model.critic.get_weights()))
 
         gradients = e_tape.gradient(e_loss, self.model.log_ent_coef)
-        # gradients = (tf.clip_by_value(gradients, -1.0, 1.0))
+        gradients = (tf.clip_by_value(gradients, -1.0, 1.0))
         self.e_opt.apply_gradients([[gradients, self.model.log_ent_coef]])
 
-        self.target_model.critic.set_weights(
-            (1 - 0.001) * np.array(self.target_model.critic.get_weights()) + 0.001 * np.array(
-                self.model.critic.get_weights()))
+        self.epock += 1
 
     def lr_decay(self, i):
-        lr = 1e-5 * (1 / (1 + 1e-5 * i))
+        lr = self.lr * 0.0001 ** (i / 10000000)
         self.e_opt.lr.assign(lr)
         self.p_opt.lr.assign(lr)
-        lr = 1e-3 * (1 / (1 + 1e-5 * i))
+        lr = 1e-3 * 0.0001 ** (i / 10000000)
         self.v_opt.lr.assign(lr)
 
     def policy(self, state, i):
-        deterministic_policy, policy, _ = self.model.actor.predict_on_batch(state)
-        self.deterministic_policy = deterministic_policy
-        policy = policy if (i + 1) % 5 != 0 else deterministic_policy
+        if i > 100:
+            deterministic_policy, policy, _ = self.model.actor.predict_on_batch(state)
+            if (i + 1) % 5 != 0:
+                # p = policy
+                # deterministic_policy = deterministic_policy.numpy()
+                # policy += 0.1 * np.random.randn(deterministic_policy.shape[0], deterministic_policy.shape[1])
+                p = np.array([policy[i] if 0.1 < np.random.rand() else self.aciton_space.sample() for i in range(policy.shape[0])])
+            else:
+                p = deterministic_policy
+        else:
+            p = np.array([self.aciton_space.sample() for _ in range(state.shape[0])])
 
-        return policy
+        return p
 
     def save(self, i):
         self.restore = True
