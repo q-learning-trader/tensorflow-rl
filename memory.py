@@ -144,11 +144,14 @@ class Memory(object):  # stored as ( s, a, r, s_ ) in SumTree
             # b_ISWeights[i, 0] = np.power(n * sampling_probabilities, -self.PER_b) / max_weight
 
             if type(data) != int:
-                b_idx.append(index)
+                if index in b_idx:
+                    pass
+                else:
+                    b_idx.append(index)
 
-                experience = [data]
+                    experience = [data]
 
-                memory_b.append(experience)
+                    memory_b.append(experience)
 
         return np.array(b_idx).reshape((-1,)), memory_b  # , b_ISWeights
 
