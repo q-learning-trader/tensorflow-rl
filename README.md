@@ -2,7 +2,7 @@
 
 use comand line
 ```
-python gen_data.py file_name
+python gen_data.py gbpjpy15.csv
 ```
 
 ```python
