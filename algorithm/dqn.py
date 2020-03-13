@@ -1,19 +1,15 @@
-import pickle
 import shutil
-from collections import deque
 
-import numpy as np
 import tensorflow as tf
-from IPython.display import clear_output
-from memory import *
-import base
 
-from new_rewards import Reward
+import base
+import numpy as np
 
 def softmax(x):
     """Compute softmax values for each sets of scores in x."""
     e_x = np.exp(x - np.max(x))
     return e_x / e_x.sum()
+
 
 def build_model(dim=(10, 4)):
     inputs = tf.keras.layers.Input(dim)
@@ -31,11 +27,11 @@ def build_model(dim=(10, 4)):
 
     return tf.keras.Model(inputs, out)
 
-
 ################################################################################################################################
 
 class Agent(base.Base_Agent):
     def build(self):
+        self.types = "DQN"
         self.gamma = 0.
         self.epsilon = 0.1
         if self.restore:
@@ -44,11 +40,11 @@ class Agent(base.Base_Agent):
             self.target_model = tf.keras.models.load_model("dqn.h5")
         else:
             self.model = build_model()
-            self.model.compile("adam", "mse")
+            self.model.compile("nadam", "mse")
             self.target_model = build_model()
             self.target_model.set_weights(self.model.get_weights())
 
-    def loss(self,states,new_states,rewards,actions):
+    def loss(self, states, new_states, rewards, actions):
         q = self.model.predict_on_batch(states)
         target_q = self.target_model.predict_on_batch(new_states).numpy()
         arg_q = self.model.predict_on_batch(new_states).numpy()
@@ -67,7 +63,7 @@ class Agent(base.Base_Agent):
         actions = np.array([a[1] for a in memory]).reshape((-1, 1))
         rewards = np.array([a[2] for a in memory], np.float32).reshape((-1, 1))
 
-        q_backup, q = self.loss(states,new_states,rewards,actions)
+        q_backup, q = self.loss(states, new_states, rewards, actions)
 
         return tf.reduce_sum(np.abs(q_backup - q), -1).numpy().reshape((-1,))
 
@@ -101,10 +97,10 @@ class Agent(base.Base_Agent):
     def policy(self, state, i):
         epsilon = self.epsilon + (1 - self.epsilon) * (np.exp(-0.0001 * i))
         q = self.model.predict_on_batch(state).numpy()
-        q = np.abs(q) / np.sum(np.abs(q),1).reshape((-1,1)) * (np.abs(q) / q)
+        q = np.abs(q) / np.sum(np.abs(q), 1).reshape((-1, 1)) * (np.abs(q) / q)
 
         if (i + 1) % 5 != 0:
-            q += 0.05 * np.random.randn(q.shape[0],q.shape[1])
+            q += 0.05 * np.random.randn(q.shape[0], q.shape[1])
             action = np.array([np.argmax(i) if epsilon < np.random.rand() else np.random.randint(2) for i in q])
         else:
             action = np.argmax(q, -1)

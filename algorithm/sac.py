@@ -49,7 +49,7 @@ def build_actor(dim):
 
     x = tf.keras.layers.GlobalAveragePooling1D()(inputs)
     x = tf.keras.layers.Dense(32, "elu")(x)
-    x = tf.keras.layers.Dropout(0.3)(x)
+    x = tf.keras.layers.Dropout(.3)(x)
     # x = tf.keras.layers.AlphaDropout(0.1)(x)
     x = tf.keras.layers.Dense(32, "elu")(x)
     x = tf.keras.layers.Dropout(.3)(x)
@@ -95,8 +95,9 @@ class Model(tf.keras.Model):
 
 class Agent(base.Base_Agent):
     def build(self):
-        self.gamma = 0.2
-        self.epock = 0
+        self.gamma = 0.
+        self.epock = 0.
+        self.types = "PG"
         self.aciton_space = Box(np.array([-1.,-1.]), np.array([1., 1.]))
 
         self.model = Model()
@@ -109,9 +110,9 @@ class Agent(base.Base_Agent):
         else:
             self.target_model.set_weights(self.model.get_weights())
 
-        self.v_opt = tf.optimizers.Adam(1e-3)
-        self.p_opt = tf.optimizers.Adam(self.lr)
-        self.e_opt = tf.optimizers.Adam(self.lr)
+        self.v_opt = tf.keras.optimizers.Nadam(1e-3)
+        self.p_opt = tf.keras.optimizers.Nadam(self.lr)
+        self.e_opt = tf.keras.optimizers.Nadam(self.lr)
 
     def sample(self, memory):
         states = np.array([a[0] for a in memory], np.float32)
@@ -177,9 +178,9 @@ class Agent(base.Base_Agent):
                          for grad in gradients]
             self.p_opt.apply_gradients(zip(gradients, self.model.actor.trainable_variables))
 
-            self.target_model.critic.set_weights(
-                (1 - 0.005) * np.array(self.target_model.critic.get_weights()) + 0.005 * np.array(
-                    self.model.critic.get_weights()))
+            self.target_model.set_weights(
+                (1 - 0.005) * np.array(self.target_model.get_weights()) + 0.005 * np.array(
+                    self.model.get_weights()))
 
         gradients = e_tape.gradient(e_loss, self.model.log_ent_coef)
         gradients = (tf.clip_by_value(gradients, -1.0, 1.0))
@@ -193,6 +194,9 @@ class Agent(base.Base_Agent):
         self.p_opt.lr.assign(lr)
         lr = 1e-3 * 0.0001 ** (i / 10000000)
         self.v_opt.lr.assign(lr)
+
+    def gamma_updae(self, i):
+        self.gamma = 1 - (0.8 + (1 - 0.8) * (np.exp(-0.00001 * i)))
 
     def policy(self, state, i):
         if i > 100:
