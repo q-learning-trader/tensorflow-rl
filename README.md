@@ -13,7 +13,7 @@ agent.run()
 ```
 
 # argument
-spread : Trade cost.
-pip_cost : Magnification when calculating pip.
-  example : gbpjpy, 133.745 - 133.744 = 0.001, 0.001 * 1000 = 1pip.
-leverage : Available assets = assets * leverage
+spread : Trade cost  
+pip_cost : Magnification when calculating pip  
+  example : gbpjpy, 133.745 - 133.744 = 0.001, 0.001 * 1000 = 1pip  
+leverage : Available assets = assets * leverage  
