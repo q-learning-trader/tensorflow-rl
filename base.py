@@ -1,10 +1,9 @@
-import shutil
 from collections import deque
 
 import tensorflow as tf
 from IPython.display import clear_output
 
-from memory import *
+from memory import Memory
 from new_rewards import Reward, Reward2
 import numpy as np
 
@@ -32,7 +31,7 @@ def bese_net(inputs):
 
 class Base_Agent:
     def __init__(self, spread, pip_cost, leverage=500, min_lots=0.01, assets=1000000, available_assets_rate=0.4,
-                 restore=False, step_size=96, n=3, lr=1-3, rewards=1):
+                 restore=False, step_size=96, n=3, lr=1-3):
         self.step_size = step_size
         spread /= pip_cost
         self.restore = restore
@@ -43,7 +42,7 @@ class Base_Agent:
         self.build()
 
         self.gen_data()
-        self.rewards = Reward(spread, leverage, pip_cost, min_lots, assets, available_assets_rate) if rewards == 1 else Reward2(spread, leverage, pip_cost, min_lots, assets, available_assets_rate)
+        self.rewards = Reward(spread, leverage, pip_cost, min_lots, assets, available_assets_rate) if self.types == "DQN" else Reward2(spread, leverage, pip_cost, min_lots, assets, available_assets_rate)
         self.rewards.max_los_cut = -np.mean(self.atr) * pip_cost
         self.memory = Memory(500000)
 
@@ -112,13 +111,13 @@ class Base_Agent:
             memory = deque()
 
             action = self.policy(df, i)
-            if types == "PG":
+            if self.types == "PG":
                 q = action[:]
                 action, leverage = action[:,0], [i * 2.5 if i > 0 else i * .5 for i in action[:,1]]
-                action = [0 if i > 0 else 1 for i in action]
+                action = [0 if i > .5 else 1 for i in np.abs(action)]
                 # action = [2 if i >= 0 and i < .5 else 0 if i >= .5 and i < 1. else 1 for i in np.abs(action) * 1.5]
                 self.rewards.reward(trend, high, low, action, leverage, atr, scale_atr)
-            else:
+            elif self.types == "DQN":
                 self.rewards.reward(trend, high, low, action, atr, scale_atr)
                 q = action
 
