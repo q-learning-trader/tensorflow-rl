@@ -7,6 +7,8 @@ from memory import Memory
 from new_rewards import Reward, Reward2
 import numpy as np
 
+# huber loss
+
 def bese_net(inputs):
     x1 = tf.keras.layers.Conv1D(48, 3, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
     x1 = tf.keras.layers.BatchNormalization()(x1)
@@ -38,13 +40,14 @@ class Base_Agent:
         self.lr = lr
         self.n = n
         self.gamma = 0.4
+        self.random = 0
 
         self.build()
 
         self.gen_data()
         self.rewards = Reward(spread, leverage, pip_cost, min_lots, assets, available_assets_rate) if self.types == "DQN" else Reward2(spread, leverage, pip_cost, min_lots, assets, available_assets_rate)
         self.rewards.max_los_cut = -np.mean(self.atr) * pip_cost
-        self.memory = Memory(500000)
+        self.memory = Memory(5000000)
 
     def build(self):
         pass
@@ -53,7 +56,11 @@ class Base_Agent:
         self.x = np.load("x.npy")
         self.y, self.atr, self.scale_atr, self.high, self.low = np.load("target.npy")
 
-    def loss(self):
+    def huber_loss(self, q_backup, q, delta=4):
+        error = tf.abs(q_backup - q)
+        return tf.where(error < delta, error ** 2 * .5, delta * error - 0.5 * delta ** 2)
+
+    def loss(self, states, new_states, rewards, actions):
         pass
 
     def sample(self, memory):
@@ -121,8 +128,8 @@ class Base_Agent:
                 self.rewards.reward(trend, high, low, action, atr, scale_atr)
                 q = action
 
-            if (reset + 1) % 4000 == 0:
-                self.memory = Memory(500000)
+            if (reset + 1) % 10000 == 0:
+                self.memory = Memory(5000000)
                 reset = 0
 
             # memory append
