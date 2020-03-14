@@ -32,8 +32,9 @@ def build_model(dim=(10, 4)):
 class Agent(base.Base_Agent):
     def build(self):
         self.types = "DQN"
-        self.gamma = 0.
-        self.epsilon = 0.1
+        self.gamma = 0.2
+        self.epsilon = 0.05
+
         if self.restore:
             self.i = np.load("dqn_epoch.npy")
             self.model = tf.keras.models.load_model("dqn.h5")
@@ -48,6 +49,7 @@ class Agent(base.Base_Agent):
         q = self.model.predict_on_batch(states)
         target_q = self.target_model.predict_on_batch(new_states).numpy()
         arg_q = self.model.predict_on_batch(new_states).numpy()
+        arg_q = [np.argmax(arg_q) if 0.1 < np.random.rand() else np.random.randint(2) for arg_q in arg_q]
 
         q_backup = q.numpy()
 
@@ -65,7 +67,7 @@ class Agent(base.Base_Agent):
 
         q_backup, q = self.loss(states, new_states, rewards, actions)
 
-        return tf.reduce_sum(np.abs(q_backup - q), -1).numpy().reshape((-1,))
+        return tf.reduce_sum(self.huber_loss(q_backup, q), -1).numpy().reshape((-1,))
 
     def train(self):
         tree_idx, replay = self.memory.sample(128)
@@ -77,22 +79,24 @@ class Agent(base.Base_Agent):
 
         with tf.GradientTape() as tape:
             q_backup, q = self.loss(states, new_states, rewards, actions)
-            loss = tf.reduce_mean((q_backup - q) ** 2) * .5
+            error = self.huber_loss(q_backup, q)
+            loss = tf.reduce_mean(tf.reduce_sum(error, -1))
 
-        ae = tf.reduce_sum(np.abs(q_backup - q), -1).numpy().reshape((-1,)) + 1e-10
+        ae = tf.reduce_sum(error, -1).numpy().reshape((-1,)) + 1e-10
+
         self.memory.batch_update(tree_idx, ae)
 
         gradients = tape.gradient(loss, self.model.trainable_variables)
-        gradients = [(tf.clip_by_value(grad, -10.0, 10.0))
-                     for grad in gradients]
+        # gradients = [(tf.clip_by_value(grad, -1.0, 1.0))
+        #              for grad in gradients]
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
     def lr_decay(self, i):
         lr = self.lr * 0.0001 ** (i / 10000000)
         self.model.optimizer.lr.assign(lr)
 
-    def gamma_updae(self, i):
-        self.gamma = 1 - (0.6 + (1 - 0.6) * (np.exp(-0.0001 * i)))
+    # def gamma_updae(self, i):
+    #     self.gamma = 1 - (0.6 + (1 - 0.6) * (np.exp(-0.0001 * i)))
 
     def policy(self, state, i):
         epsilon = self.epsilon + (1 - self.epsilon) * (np.exp(-0.0001 * i))
@@ -100,8 +104,10 @@ class Agent(base.Base_Agent):
         q = np.abs(q) / np.sum(np.abs(q), 1).reshape((-1, 1)) * (np.abs(q) / q)
 
         if (i + 1) % 5 != 0:
-            q += 0.05 * np.random.randn(q.shape[0], q.shape[1])
-            action = np.array([np.argmax(i) if epsilon < np.random.rand() else np.random.randint(2) for i in q])
+            epsilon = epsilon if self.random % 5 != 0 else 1.
+            q += epsilon * np.random.randn(q.shape[0], q.shape[1])
+            action = np.argmax(q, 1)
+            self.random += 1
         else:
             action = np.argmax(q, -1)
 

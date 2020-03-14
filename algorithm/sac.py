@@ -123,9 +123,9 @@ class Agent(base.Base_Agent):
         _, _, target_v = self.target_model.critic.predict_on_batch([new_states, actions])
         q1, _, _ = self.model.critic.predict_on_batch([states, actions])
 
-        q_backup = rewards + self.gamma * target_v.numpy()
+        q_backup = rewards + self.gamma * target_v
 
-        return np.abs(q_backup - q1)
+        return self.huber_loss(q_backup, q1).numpy().reshape((-1,))
 
     def train(self):
         tree_idx, replay = self.memory.sample(128)
@@ -151,11 +151,11 @@ class Agent(base.Base_Agent):
 
             q_backup = rewards + self.gamma * target_v
 
-            q1_loss = tf.reduce_mean((q_backup - q1) ** 2) * .5
-            q2_loss = tf.reduce_mean((q_backup - q2) ** 2) * .5
+            q1_loss = tf.reduce_mean(self.huber_loss(q_backup, q1))
+            q2_loss = tf.reduce_mean(self.huber_loss(q_backup, q2))
 
             v_backup = min_q_pi - ent_coef * logp_pi
-            v_loss = tf.reduce_mean((v_backup - v) ** 2) * .5
+            v_loss = tf.reduce_mean(self.huber_loss(v_backup, v))
 
             v_loss += q1_loss + q2_loss
         ################################################################################
@@ -202,10 +202,9 @@ class Agent(base.Base_Agent):
         if i > 100:
             deterministic_policy, policy, _ = self.model.actor.predict_on_batch(state)
             if (i + 1) % 5 != 0:
-                # p = policy
-                # deterministic_policy = deterministic_policy.numpy()
-                # policy += 0.1 * np.random.randn(deterministic_policy.shape[0], deterministic_policy.shape[1])
-                p = np.array([policy[i] if 0.1 < np.random.rand() else self.aciton_space.sample() for i in range(policy.shape[0])])
+                epislon = .1 if self.random % 50 != 0 else .5
+                p = np.array([policy[i] if epislon < np.random.rand() else self.aciton_space.sample() for i in range(policy.shape[0])])
+                self.random += 1
             else:
                 p = deterministic_policy
         else:
