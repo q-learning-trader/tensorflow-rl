@@ -56,7 +56,7 @@ class Actor:
 
 
 class NeuroEvolution:
-    def __init__(self, population_size=100, mutation_rate=0.1, restore=False):
+    def __init__(self, population_size=100, mutation_rate=0.01, restore=False):
         self.population_size = population_size
         self.mutation_rate = mutation_rate
         self.restore = restore
@@ -70,7 +70,7 @@ class NeuroEvolution:
     def initialize(self):
         self.population = np.array([Actor(np.array(actor().get_weights())) for _ in range(self.population_size)])
         if self.restore:
-            w = np.load("ne1_w.npy")
+            w = np.load("neural_evolution_ac_w.npy", allow_pickle=True)
             for i in range(self.population_size):
                 self.population[i].w = w[i].copy()
 
@@ -214,8 +214,8 @@ class Agent(base.Base_Agent):
     def save(self, i):
         self.restore = True
         self.i = i
-        self.model.save_weights("ne1/ne1")
-        np.save("ne1/ne1_epoch", i)
+        self.model.save_weights("neural_evolution_ac/neural_evolution_ac")
+        np.save("neural_evolution_ac/neural_evolution_ac_epoch", i)
         w = np.array([i.w for i in self.ne.population])
-        np.save("ne1/ne1_w", w)
-        copy_tree("/content/ne1", "/content/drive/My Drive")
+        np.save("neural_evolution_ac/neural_evolution_ac_w", w)
+        copy_tree("/content/neural_evolution_ac", "/content/drive/My Drive")
