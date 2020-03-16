@@ -41,6 +41,17 @@ def critic(dim):
 
     return tf.keras.Model([states, action], [q1, q2, v])
 
+def ne_critic(dim=(10,4)):
+    states = tf.keras.layers.Input(dim, name="states")
+    action = tf.keras.layers.Input((2,), name="action")
+
+    x = base.bese_net(states)
+
+    x_action = tf.keras.layers.Concatenate()([x, action])
+    q1 = output(x_action, "q1")
+    q2 = output(x_action, "q2")
+    v = output(x, "v")
+
 
 class Model(tf.keras.Model):
     def __init__(self, dim=(10, 4)):
@@ -56,7 +67,7 @@ class Actor:
 
 
 class NeuroEvolution:
-    def __init__(self, population_size=100, mutation_rate=0.01, restore=False):
+    def __init__(self, population_size=100, mutation_rate=0.1, restore=False):
         self.population_size = population_size
         self.mutation_rate = mutation_rate
         self.restore = restore
@@ -75,9 +86,10 @@ class NeuroEvolution:
                 self.population[i].w = w[i].copy()
 
     def mutate(self, individual, scale=1.0):
-        for i in range(individual.shape[0]):
+        for i in range(individual.w.shape[0]):
             mutation_mask = np.random.binomial(1, self.mutation_rate, individual.w[i].shape)
-            individual.w[i] += np.random.normal(0, scale, individual[i].shape) * mutation_mask
+            individual.w[i] += np.random.normal(0, scale, individual.w[i].shape) * mutation_mask
+        return individual
 
     def inherit_weights(self, parent, child):
         child.w = parent.w.copy()
@@ -87,26 +99,27 @@ class NeuroEvolution:
         child1 = self.inherit_weights(parent1, Actor(np.array(actor().get_weights())))
         child2 = self.inherit_weights(parent2, Actor(np.array(actor().get_weights())))
 
-        for i in range(parent1.shape[0]):
+        for i in range(parent1.w.shape[0]):
             cutoff = np.random.randint(0, parent1.w[i].shape[1])
-            child1.w[i, :, cutoff:] = parent2.w[i, :, cutoff:].copy()
-            child2.w[i, :, cutoff:] = parent1.w[i, :, cutoff:].copy()
+            child1.w[i][:, cutoff:] = parent2.w[i][:, cutoff:].copy()
+            child2.w[i][:, cutoff:] = parent1.w[i][:, cutoff:].copy()
 
         return child1, child2
 
     def evolve(self):
         fitnesses = np.array([i.fitness for i in self.population]).reshape((-1,))
         self.population = self.population[np.argsort(fitnesses)[::-1]]
-        self.fittest_individual = self.population[0]
+        self.fittest_individual = self.population[0].w
 
         next_population = self.population[:self.n_winners]
         probs = softmax(np.abs(fitnesses) / np.sum(np.abs(fitnesses)) * (np.abs(fitnesses) / fitnesses))
         parents = np.random.choice(self.population, self.n_parents, False, probs)
 
+        l = []
         for i in range(0, len(parents), 2):
             child1, child2 = self.crossover(parents[i], parents[i + 1])
-            next_population += [self.mutate(child1), self.mutate(child2)]
-        self.population = next_population
+            l += [self.mutate(child1), self.mutate(child2)]
+        self.population = np.append(next_population, l)
 
 
 class Agent(base.Base_Agent):
@@ -114,21 +127,22 @@ class Agent(base.Base_Agent):
         self.ne = NeuroEvolution(restore=self.restore)
 
         self.gamma = 0.
-        self.epoch = 0
         self.types = "PG"
-        self.aciton_space = Box(-1, 1, (2,))
+        self.aciton_space = Box(np.array([-1, -1.]), np.array([1., 1.]))
 
         self.model = Model()
         self.target_model = Model()
 
         if self.restore:
             self.i = np.load("ne1_epoch.npy")
-            self.model.load_weights("ne1")
-            self.target_model.load_weights("ne1")
+            self.model.load_weights("neural_evolution_ac")
+            self.target_model.load_weights("neural_evolution_ac")
         else:
             self.target_model.set_weights(self.model.get_weights())
 
         self.v_opt = tf.keras.optimizers.Nadam(self.lr)
+
+        self.epoch = self.i if self.restore else 0
 
     def sample(self, memory):
         states = np.array([a[0] for a in memory], np.float32)
@@ -170,11 +184,11 @@ class Agent(base.Base_Agent):
 
             v_loss += q1_loss + q2_loss
 
-        if self.epoch >= 50 and self.epoch % 2 == 0:
+        if self.epoch >= 50 and self.epoch % 5 == 0:
             for i in range(self.ne.population_size):
                 self.model.actor.set_weights(self.ne.population[i].w)
                 policy = self.model.actor.predict_on_batch(states)
-                q1_pi, q2_pi = self.model.critic.predict_on_batch([states, policy])
+                q1_pi, q2_pi, _ = self.model.critic.predict_on_batch([states, policy])
                 self.ne.population[i].fitness = np.mean(q1_pi + q2_pi) / 2
 
             self.ne.evolve()
@@ -185,9 +199,11 @@ class Agent(base.Base_Agent):
                     self.model.get_weights()))
 
         gradients = tape.gradient(v_loss, self.model.critic.trainable_variables)
-        gradients = [(tf.clip_by_value(grad, -10.0, 10.0))
-                     for grad in gradients]
+        # gradients = [(tf.clip_by_value(grad, -10.0, 10.0))
+        #              for grad in gradients]
         self.v_opt.apply_gradients(zip(gradients, self.model.critic.trainable_variables))
+
+        self.epoch += 1
 
     def lr_decay(self, i):
         lr = self.lr * 0.0001 ** (i / 10000000)
@@ -202,18 +218,26 @@ class Agent(base.Base_Agent):
             if (i + 1) % 5 != 0:
                 epislon = .1 if self.random % 5 != 0 else .5
                 policy += epislon * np.random.randn(policy.shape[0], policy.shape[1])
-                epislon = 0. if self.random % 5 != 0 else .5
-                policy = np.array([policy[i] if epislon < np.random.rand() else self.aciton_space.sample() for i in
-                                   range(policy.shape[0])])
+                policy = np.clip(policy, -1, 1)
+                # epislon = 0. if self.random % 5 != 0 else .5
+                # policy = np.array([policy[i] if epislon < np.random.rand() else self.aciton_space.sample() for i in
+                #                    range(policy.shape[0])])
                 self.random += 1
         else:
             policy = np.array([self.aciton_space.sample() for _ in range(state.shape[0])])
 
         return policy
 
+    def pg_action(self, action):
+        q = action[:]
+        action, leverage = action[:, 0], [i * 2.5 if i > 0 else i * .5 for i in action[:, 1]]
+        action = [0 if i >= 0 else 1 for i in action]
+        # action = [2 if i >= -1.5 and i < -0.5 else 0 if i >= -0.5 and i < 0.5 else 1 for i in action * 1.5]
+        return action, leverage, q
+
     def save(self, i):
         self.restore = True
-        self.i = i
+        self.i = i + 1
         self.model.save_weights("neural_evolution_ac/neural_evolution_ac")
         np.save("neural_evolution_ac/neural_evolution_ac_epoch", i)
         w = np.array([i.w for i in self.ne.population])
