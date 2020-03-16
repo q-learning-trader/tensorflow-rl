@@ -10,22 +10,17 @@ import numpy as np
 # huber loss
 
 def bese_net(inputs):
-    x1 = tf.keras.layers.Conv1D(48, 3, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
-    x1 = tf.keras.layers.BatchNormalization()(x1)
-    x2 = tf.keras.layers.Conv1D(48, 3, dilation_rate=2, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
-    x2 = tf.keras.layers.BatchNormalization()(x2)
-    x3 = tf.keras.layers.Conv1D(48, 3, dilation_rate=4, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
-    x3 = tf.keras.layers.BatchNormalization()(x3)
-    x4 = tf.keras.layers.Conv1D(48, 3, dilation_rate=6, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
-    x4 = tf.keras.layers.BatchNormalization()(x4)
-    x = x1 + x2 + x3 + x4
-    b = tf.keras.layers.Conv1D(48, 1, padding="same", activation="elu", kernel_initializer="he_normal")(inputs)
+    x1 = tf.keras.layers.Conv1D(32, 3, padding="same", activation="elu")(inputs)
+    x2 = tf.keras.layers.Conv1D(32, 3, dilation_rate=2, padding="same", activation="elu")(inputs)
+    x3 = tf.keras.layers.Conv1D(32, 3, dilation_rate=3, padding="same", activation="elu")(inputs)
+    x4 = tf.keras.layers.Conv1D(32, 3, dilation_rate=4, padding="same", activation="elu")(inputs)
+    x5 = tf.keras.layers.Conv1D(32, 3, dilation_rate=5, padding="same", activation="elu")(inputs)
+    x6 = tf.keras.layers.Conv1D(32, 3, dilation_rate=6, padding="same", activation="elu")(inputs)
+    x = x1 + x2 + x3 + x4 + x5 + x6
+    b = tf.keras.layers.Conv1D(32, 1, padding="same", activation="elu")(inputs)
     x = tf.keras.layers.Concatenate()([x, b])
     #
-    x = tf.keras.layers.Conv1D(328, 3, padding="same", activation="elu", kernel_initializer="he_normal")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    # x = tf.keras.layers.Conv1D(328*2, 3, padding="same", activation="relu")(x)
-    # x = tf.keras.layers.Conv1D(328*4, 3, padding="same", activation="relu")(x)
+    x = tf.keras.layers.Conv1D(328, 3, padding="same", activation="elu")(x)
 
     x = tf.keras.layers.Flatten()(x)
 
@@ -92,6 +87,12 @@ class Base_Agent:
     def policy(self, state, i):
         pass
 
+    def pg_action(self, action):
+        q = action[:]
+        action, leverage = action[:, 0], [i * 2.5 if i > 0 else i * .5 for i in action[:, 1]]
+        action = [0 if i > 0.5 else 1 for i in action]
+        return action, leverage, q
+
     def save(self, i):
         pass
 
@@ -119,9 +120,7 @@ class Base_Agent:
 
             action = self.policy(df, i)
             if self.types == "PG":
-                q = action[:]
-                action, leverage = action[:,0], [i * 2.5 if i > 0 else i * .5 for i in action[:,1]]
-                action = [0 if i > .5 else 1 for i in np.abs(action)]
+                action, leverage, q = self.pg_action(action)
                 # action = [2 if i >= 0 and i < .5 else 0 if i >= .5 and i < 1. else 1 for i in np.abs(action) * 1.5]
                 self.rewards.reward(trend, high, low, action, leverage, atr, scale_atr)
             elif self.types == "DQN":
@@ -139,7 +138,7 @@ class Base_Agent:
                     if index == 0:
                         rewards[index] = 0
                     else:
-                        rewards[index] = int(np.log(r / self.rewards.total_gain[index - 1]) * 100 * 10 ** 4) / (10 ** 2)
+                        rewards[index] = int(np.log(r / self.rewards.total_gain[index - 1]) * 100 * 10 ** 3) / (10 ** 2)
                         if rewards[index] == -np.inf:
                             rewards[index] = 0
 
