@@ -184,7 +184,12 @@ class Agent(base.Base_Agent):
 
             v_loss += q1_loss + q2_loss
 
-        if self.epoch >= 50 and self.epoch % 5 == 0:
+        gradients = tape.gradient(v_loss, self.model.critic.trainable_variables)
+        # gradients = [(tf.clip_by_value(grad, -10.0, 10.0))
+        #              for grad in gradients]
+        self.v_opt.apply_gradients(zip(gradients, self.model.critic.trainable_variables))
+        
+        if self.epoch >= 50 and self.epoch % 1000 == 0:
             for i in range(self.ne.population_size):
                 self.model.actor.set_weights(self.ne.population[i].w)
                 policy = self.model.actor.predict_on_batch(states)
@@ -193,15 +198,10 @@ class Agent(base.Base_Agent):
 
             self.ne.evolve()
             self.model.actor.set_weights(self.ne.fittest_individual)
-
-            self.target_model.set_weights(
-                (1 - 0.005) * np.array(self.target_model.get_weights()) + 0.005 * np.array(
-                    self.model.get_weights()))
-
-        gradients = tape.gradient(v_loss, self.model.critic.trainable_variables)
-        # gradients = [(tf.clip_by_value(grad, -10.0, 10.0))
-        #              for grad in gradients]
-        self.v_opt.apply_gradients(zip(gradients, self.model.critic.trainable_variables))
+        
+        self.target_model.set_weights(
+            (1 - 0.005) * np.array(self.target_model.get_weights()) + 0.005 * np.array(
+                self.model.get_weights()))
 
         self.epoch += 1
 
