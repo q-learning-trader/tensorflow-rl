@@ -8,6 +8,8 @@ class Reward:
         self.leverage = leverage
         self.pip_cost = pip_cost
         self.min_lots = min_lots
+        self.lc = 0
+        self.tp = 0
         self.initial_assets = assets
         self.assets = assets
         self.available_assets_rate = available_assets_rate
@@ -42,7 +44,7 @@ class Reward:
 
         for action, trend, idx, atr, scale_atr in zip(action, trend, range(len(high)), atr, scale_atr):
             if old_action == None and position == None and self.assets > self.minimum_required_margin * 2 and action != 2:
-                self.minimum_required_margin = trend * self.pip_cost / self.leverage
+                self.minimum_required_margin = trend * self.pip_cost / 500
                 lot = self.assets * self.available_assets_rate / self.minimum_required_margin * self.min_lots
                 self.lot = int(lot * 10 ** 2) / (10 ** 2)
 
@@ -110,7 +112,7 @@ class Reward:
         self.assets = undetermined_assets
 
 class Reward2(Reward):
-    def reward(self, trend, high, low, action, leverage, atr, scale_atr):
+    def reward(self, trend, high, low, action, leverage, lc, tp, atr, scale_atr):
         old_action = None
         position = None
         gain = 0
@@ -121,19 +123,18 @@ class Reward2(Reward):
         undetermined_assets = self.assets
         self.positions = None
         self.minimum_required_margin = trend[0] * self.pip_cost / self.leverage
+        min_lc = -self.spread * 100 * 2
 
-
-        for action, leverage, trend, idx, atr, scale_atr in zip(action, leverage, trend, range(len(high)), atr, scale_atr):
-
-            if old_action == None and position == None and self.assets > self.minimum_required_margin * 2 and action != 2:
+        for action, leverage, self.loss_cut, self.take_profit, trend, idx, atr, scale_atr in zip(action, leverage, lc, tp, trend, range(len(high)), atr, scale_atr):
+            if old_action == None and position == None and self.assets > self.minimum_required_margin * 5 and action != 2:
                 self.minimum_required_margin = trend * self.pip_cost / self.leverage
                 lot = self.assets * self.available_assets_rate / self.minimum_required_margin * self.min_lots
                 lot += lot * leverage
                 self.lot = int(lot * 10 ** 2) / (10 ** 2)
 
                 self.positions = trend + self.spread if action == 0 else trend - self.spread
-                self.tp = min(abs(self.max_los_cut), atr * self.pip_cost)
-                self.los_cut = max(self.max_los_cut, -atr * self.pip_cost)
+                tp = (self.tp + self.tp * self.take_profit * self.lot) * 100
+                lc = min((self.lc - self.lc * self.loss_cut * self.lot) * 100, min_lc * self.lot)
                 old_action = action
 
             elif old_action != None:
@@ -146,17 +147,21 @@ class Reward2(Reward):
                         loss = (self.positions - high[idx - 1]) * self.pip_cost * self.lot * 100
 
                     loss = min(gain, loss)
-                    tp = self.tp * self.lot * 100
-                    loss_cut = self.los_cut * self.lot * 100
-                    gain = loss_cut if loss <= loss_cut else gain
-                    undetermined_assets = max(self.assets + gain, self.assets + loss_cut)
+                    if loss <= lc:
+                        gain = lc
+                        confirm = True
+                    elif gain >= tp:
+                        confirm = True
+                    else:
+                        confirm = False
 
-                    confirm = gain == loss_cut
+                    undetermined_assets = self.assets + gain
+
                     buy = old_action != action and action != 2
                     if confirm or buy:
                         self.assets = undetermined_assets
 
-                        if self.assets > self.minimum_required_margin * 2:
+                        if self.assets > self.minimum_required_margin * 5:
                             if action == 2:
                                 self.positions = None
                                 old_action = None
@@ -166,8 +171,9 @@ class Reward2(Reward):
                                 lot += lot * leverage
                                 self.lot = int(lot * 10 ** 2) / (10 ** 2)
                                 self.positions = trend + self.spread if action == 0 else trend - self.spread
-                                self.tp = min(abs(self.max_los_cut), atr * self.pip_cost)
-                                self.los_cut = max(self.max_los_cut, -atr * self.pip_cost)
+                                tp = (self.tp + self.tp * self.take_profit * self.lot) * 100
+                                lc = min((self.lc - self.lc * self.loss_cut * self.lot) * 100, min_lc * self.lot)
+
                         else:
                             self.positions = None
 
@@ -181,19 +187,19 @@ class Reward2(Reward):
                 elif self.assets > self.minimum_required_margin * 2:
                     old_action = None
 
-            self.total_gain.append(undetermined_assets)
             try:
-                if self.total_gain[-1] == self.total_gain[-2]:
-                    self.total_gain[ -1] = undetermined_assets - undetermined_assets * 0.1
+                undetermined_assets = undetermined_assets[0]
             except:
                 pass
-
+            self.total_gain.append(undetermined_assets)
             self.losses.append(self.los_cut)
             # print(undetermined_assets)
 
             gain = 0
             self.growth_rate.append(np.log(undetermined_assets / self.initial_assets) * 100)
+
         self.assets = undetermined_assets
+        self.total_gain = np.clip(self.total_gain, 1, max(self.total_gain))
 
 
 class Reward3(Reward):

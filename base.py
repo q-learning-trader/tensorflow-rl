@@ -20,7 +20,7 @@ def bese_net(inputs):
     b = tf.keras.layers.Conv1D(32, 1, padding="same", activation="elu")(inputs)
     x = tf.keras.layers.Concatenate()([x, b])
     #
-    x = tf.keras.layers.Conv1D(328, 3, padding="same", activation="elu")(x)
+    x = tf.keras.layers.Conv1D(128, 3, padding="same", activation="elu")(x)
 
     x = tf.keras.layers.Flatten()(x)
 
@@ -37,11 +37,13 @@ class Base_Agent:
         self.gamma = 0.4
         self.random = 0
 
+        self.gen_data()
         self.build()
 
-        self.gen_data()
         self.rewards = Reward(spread, leverage, pip_cost, min_lots, assets, available_assets_rate) if self.types == "DQN" else Reward2(spread, leverage, pip_cost, min_lots, assets, available_assets_rate)
         self.rewards.max_los_cut = -np.mean(self.atr) * pip_cost
+        self.rewards.lc = -np.mean(self.atr) * pip_cost
+        self.rewards.tp = np.abs(self.rewards.lc)
         self.memory = Memory(5000000)
 
     def build(self):
@@ -120,9 +122,9 @@ class Base_Agent:
 
             action = self.policy(df, i)
             if self.types == "PG":
-                action, leverage, q = self.pg_action(action)
+                action, leverage, lc, tp, q = self.pg_action(action)
                 # action = [2 if i >= 0 and i < .5 else 0 if i >= .5 and i < 1. else 1 for i in np.abs(action) * 1.5]
-                self.rewards.reward(trend, high, low, action, leverage, atr, scale_atr)
+                self.rewards.reward(trend, high, low, action, leverage, lc, tp, atr, scale_atr)
             elif self.types == "DQN":
                 self.rewards.reward(trend, high, low, action, atr, scale_atr)
                 q = action
@@ -138,7 +140,8 @@ class Base_Agent:
                     if index == 0:
                         rewards[index] = 0
                     else:
-                        rewards[index] = int(np.log(r / self.rewards.total_gain[index - 1]) * 100 * 10 ** 3) / (10 ** 2)
+                        rewards[index] = (np.log(r / self.rewards.total_gain[index - 1]) * 1000)
+                        rewards[index] = int(int(rewards[index] * 10 ** 4) / (10 ** 2))
                         if rewards[index] == -np.inf:
                             rewards[index] = 0
 
