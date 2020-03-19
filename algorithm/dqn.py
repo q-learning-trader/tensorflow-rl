@@ -49,13 +49,14 @@ class Agent(base.Base_Agent):
         q = self.model.predict_on_batch(states)
         target_q = self.target_model.predict_on_batch(new_states).numpy()
         arg_q = self.model.predict_on_batch(new_states).numpy()
-        arg_q = [np.argmax(arg_q) if 0.1 < np.random.rand() else np.random.randint(2) for arg_q in arg_q]
+        # arg_q = np.argmax(arg_q, -1)
+        arg_q = [np.argmax(arg_q) if 0.05 < np.random.rand() else np.random.randint(2) for arg_q in arg_q]
 
         q_backup = q.numpy()
 
         for i in range(rewards.shape[0]):
             # q_backup[i, actions[i]] = rewards[i] if I < 1010 and not self.restore else rewards[i] + 0.2 * target_q[i, np.argmax(arg_q[i])]
-            q_backup[i, actions[i]] = rewards[i] + self.gamma * target_q[i, np.argmax(arg_q[i])]
+            q_backup[i, actions[i]] = rewards[i] + self.gamma * target_q[i, arg_q[i]]
 
         return q_backup, q
 
@@ -67,7 +68,7 @@ class Agent(base.Base_Agent):
 
         q_backup, q = self.loss(states, new_states, rewards, actions)
 
-        return tf.reduce_sum(self.huber_loss(q_backup, q), -1).numpy().reshape((-1,))
+        return tf.reduce_sum(self.huber_loss(q_backup, q, 2), -1).numpy().reshape((-1,))
 
     def train(self):
         tree_idx, replay = self.memory.sample(128)
@@ -79,20 +80,20 @@ class Agent(base.Base_Agent):
 
         with tf.GradientTape() as tape:
             q_backup, q = self.loss(states, new_states, rewards, actions)
-            error = self.huber_loss(q_backup, q)
-            loss = tf.reduce_mean(tf.reduce_sum(error, -1))
+            error = self.huber_loss(q_backup, q, 2)
+            loss = tf.reduce_mean(error)
 
         ae = tf.reduce_sum(error, -1).numpy().reshape((-1,)) + 1e-10
 
         self.memory.batch_update(tree_idx, ae)
 
         gradients = tape.gradient(loss, self.model.trainable_variables)
-        # gradients = [(tf.clip_by_value(grad, -1.0, 1.0))
-        #              for grad in gradients]
+        gradients = [(tf.clip_by_value(grad, -1.0, 1.0))
+                     for grad in gradients]
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
     def lr_decay(self, i):
-        lr = self.lr * 0.0001 ** (i / 10000000)
+        lr = self.lr * 0.00001 ** (i / 10000000)
         self.model.optimizer.lr.assign(lr)
 
     # def gamma_updae(self, i):
@@ -101,12 +102,13 @@ class Agent(base.Base_Agent):
     def policy(self, state, i):
         epsilon = self.epsilon + (1 - self.epsilon) * (np.exp(-0.0001 * i))
         q = self.model.predict_on_batch(state).numpy()
-        q = np.abs(q) / np.sum(np.abs(q), 1).reshape((-1, 1)) * (np.abs(q) / q)
 
         if (i + 1) % 5 != 0:
+            q = np.abs(q) / np.sum(np.abs(q), 1).reshape((-1, 1)) * (np.abs(q) / q)
             epsilon = epsilon if self.random % 5 != 0 else 1.
             q += epsilon * np.random.randn(q.shape[0], q.shape[1])
-            action = np.argmax(q, 1)
+            # action = np.argmax(q, 1)
+            action = [np.argmax(i) if 0.1 < np.random.rand() else np.random.randint(2) for i in q]
             self.random += 1
         else:
             action = np.argmax(q, -1)
