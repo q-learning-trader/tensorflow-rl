@@ -15,7 +15,7 @@ def output(x, num):
     return tf.reshape(out, (-1, 2, num))
 
 
-def build_model(n=200, dim=(10, 4)):
+def build_model(n=200, dim=(30, 4)):
     inputs = tf.keras.layers.Input(dim)
 
     x = base.bese_net(inputs)
@@ -54,11 +54,12 @@ class Agent(base.Base_Agent):
         for i in range(q.shape[0]):
             q_backup[i, actions[i]] = rewards[i] + self.gamma * target_q[i, arg_q[i]]
 
-        loss = self.huber_loss(q_backup, q)
-        loss = tf.abs(self.tau - tf.stop_gradient(tf.cast((q_backup - q) < 0, tf.float32))) * loss
-        loss = tf.reduce_sum(loss, 2)
 
-        return tf.reduce_mean(loss, 1)
+        error = q_backup - q
+        q_error = tf.maximum(self.tau * error, (self.tau - 1) * error)
+        loss = tf.where(q_error < 2, q_error ** 2 * .5, 2 * q_error - 0.5 * 2 ** 2)
+
+        return tf.reduce_mean(tf.reduce_sum(loss, 2), 1)
 
     def sample(self, memory):
         states = np.array([a[0] for a in memory], np.float32)
@@ -84,8 +85,8 @@ class Agent(base.Base_Agent):
         self.memory.batch_update(tree_idx, ae)
 
         gradients = tape.gradient(loss, self.model.trainable_variables)
-        gradients = [(tf.clip_by_value(grad, -10.0, 10.0))
-                     for grad in gradients]
+        # gradients = [(tf.clip_by_value(grad, -10.0, 10.0))
+        #              for grad in gradients]
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
     def lr_decay(self, i):
