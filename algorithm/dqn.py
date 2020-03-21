@@ -11,7 +11,7 @@ def softmax(x):
     return e_x / e_x.sum()
 
 
-def build_model(dim=(10, 4)):
+def build_model(dim=(30, 4)):
     inputs = tf.keras.layers.Input(dim)
 
     x = base.bese_net(inputs)
@@ -32,7 +32,7 @@ def build_model(dim=(10, 4)):
 class Agent(base.Base_Agent):
     def build(self):
         self.types = "DQN"
-        self.gamma = 0.2
+        self.gamma = 0.5
         self.epsilon = 0.05
 
         if self.restore:
@@ -49,13 +49,11 @@ class Agent(base.Base_Agent):
         q = self.model.predict_on_batch(states)
         target_q = self.target_model.predict_on_batch(new_states).numpy()
         arg_q = self.model.predict_on_batch(new_states).numpy()
-        # arg_q = np.argmax(arg_q, -1)
-        arg_q = [np.argmax(arg_q) if 0.05 < np.random.rand() else np.random.randint(2) for arg_q in arg_q]
+        arg_q = np.argmax(arg_q, -1)
 
         q_backup = q.numpy()
 
         for i in range(rewards.shape[0]):
-            # q_backup[i, actions[i]] = rewards[i] if I < 1010 and not self.restore else rewards[i] + 0.2 * target_q[i, np.argmax(arg_q[i])]
             q_backup[i, actions[i]] = rewards[i] + self.gamma * target_q[i, arg_q[i]]
 
         return q_backup, q
@@ -68,7 +66,7 @@ class Agent(base.Base_Agent):
 
         q_backup, q = self.loss(states, new_states, rewards, actions)
 
-        return tf.reduce_sum(self.huber_loss(q_backup, q, 2), -1).numpy().reshape((-1,))
+        return tf.reduce_sum(self.mse(q_backup, q), -1).numpy().reshape((-1,))
 
     def train(self):
         tree_idx, replay = self.memory.sample(128)
@@ -80,7 +78,7 @@ class Agent(base.Base_Agent):
 
         with tf.GradientTape() as tape:
             q_backup, q = self.loss(states, new_states, rewards, actions)
-            error = self.huber_loss(q_backup, q, 2)
+            error = self.mse(q_backup, q)
             loss = tf.reduce_mean(error)
 
         ae = tf.reduce_sum(error, -1).numpy().reshape((-1,)) + 1e-10
@@ -88,8 +86,8 @@ class Agent(base.Base_Agent):
         self.memory.batch_update(tree_idx, ae)
 
         gradients = tape.gradient(loss, self.model.trainable_variables)
-        gradients = [(tf.clip_by_value(grad, -1.0, 1.0))
-                     for grad in gradients]
+        # gradients = [(tf.clip_by_value(grad, -100.0, 100.0))
+        #              for grad in gradients]
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
     def lr_decay(self, i):
