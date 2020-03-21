@@ -6,24 +6,28 @@ from IPython.display import clear_output
 from memory import Memory
 from new_rewards import Reward, Reward2
 import numpy as np
+import random
 
 # huber loss
 
 def bese_net(inputs):
     x1 = tf.keras.layers.Conv1D(32, 3, padding="same", activation="elu")(inputs)
     x2 = tf.keras.layers.Conv1D(32, 3, dilation_rate=2, padding="same", activation="elu")(inputs)
-    x3 = tf.keras.layers.Conv1D(32, 3, dilation_rate=3, padding="same", activation="elu")(inputs)
-    x4 = tf.keras.layers.Conv1D(32, 3, dilation_rate=4, padding="same", activation="elu")(inputs)
-    x5 = tf.keras.layers.Conv1D(32, 3, dilation_rate=5, padding="same", activation="elu")(inputs)
+    x3 = tf.keras.layers.Conv1D(32, 3, dilation_rate=4, padding="same", activation="elu")(inputs)
+    x4 = tf.keras.layers.Conv1D(32, 3, dilation_rate=6, padding="same", activation="elu")(inputs)
+    # x5 = tf.keras.layers.Conv1D(32, 3, dilation_rate=5, padding="same", activation="elu")(inputs)
     x6 = tf.keras.layers.Conv1D(32, 3, dilation_rate=6, padding="same", activation="elu")(inputs)
-    x = x1 + x2 + x3 + x4 + x5 + x6
+    x7 = tf.keras.layers.Conv1D(32, 3, dilation_rate=7, padding="same", activation="elu")(inputs)
+    x8 = tf.keras.layers.Conv1D(32, 3, dilation_rate=8, padding="same", activation="elu")(inputs)
+    # x = tf.keras.layers.Concatenate()([x1, x2, x3, x4])# + x5 + x6
+    x = x1 + x2 + x3+ x4# + x5 + x6 + x7 + x8
     b = tf.keras.layers.Conv1D(32, 1, padding="same", activation="elu")(inputs)
     x = tf.keras.layers.Concatenate()([x, b])
     #
     x = tf.keras.layers.Conv1D(128, 3, padding="same", activation="elu")(x)
 
     x = tf.keras.layers.Flatten()(x)
-
+    # x = tf.keras.layers.GlobalAveragePooling1D()(x)
     return x
 
 class Base_Agent:
@@ -53,9 +57,14 @@ class Base_Agent:
         self.x = np.load("x.npy")
         self.y, self.atr, self.scale_atr, self.high, self.low = np.load("target.npy")
 
+    def mse(self, q_backup, q):
+        return tf.abs(q_backup - q) ** 1.5
+
     def huber_loss(self, q_backup, q, delta=4):
         error = tf.abs(q_backup - q)
-        return tf.where(error < delta, error ** 2 * .5, delta * error - 0.5 * delta ** 2)
+        loss = tf.where(error < delta, error ** 2 * .5, delta * error - 0.5 * delta ** 2)
+        # return tf.where(q_backup > 0, loss, loss*0)
+        return loss
 
     def loss(self, states, new_states, rewards, actions):
         pass
@@ -98,18 +107,19 @@ class Base_Agent:
     def save(self, i):
         pass
 
-    def run(self, train=True, types="DQN"):
+    def run(self, train=True):
         i = 10000000 if train else 6
         start = 0 if not self.restore else self.i
         start = start if train else i-1
         reset = 0
+        h = np.random.randint(self.x.shape[0] - self.x.shape[0] * 0.2 - self.step_size)
 
         for i in range(start, i):
-            if (i + 1) % 5 != 0:
-                h = np.random.randint(self.x.shape[0] - self.x.shape[0] * 0.2 - self.step_size)
-            else:
+            if (i + 1) % 5 == 0:
                 h = np.random.randint(
                     self.x.shape[0] - self.x.shape[0] * 0.2, self.x.shape[0] - self.step_size * 5)
+            elif i % 5 != 0:
+                h = np.random.randint(self.x.shape[0] - self.x.shape[0] * 0.2 - self.step_size)
 
             df = self.x[h:h + self.step_size]
             trend = self.y[h:h + self.step_size]
@@ -123,7 +133,6 @@ class Base_Agent:
             action = self.policy(df, i)
             if self.types == "PG":
                 action, leverage, lc, tp, q = self.pg_action(action)
-                # action = [2 if i >= 0 and i < .5 else 0 if i >= .5 and i < 1. else 1 for i in np.abs(action) * 1.5]
                 self.rewards.reward(trend, high, low, action, leverage, lc, tp, atr, scale_atr)
             elif self.types == "DQN":
                 self.rewards.reward(trend, high, low, action, atr, scale_atr)
@@ -140,10 +149,13 @@ class Base_Agent:
                     if index == 0:
                         rewards[index] = 0
                     else:
-                        rewards[index] = (np.log(r / self.rewards.total_gain[index - 1]) * 1000)
-                        rewards[index] = int(int(rewards[index] * 10 ** 4) / (10 ** 2))
-                        if rewards[index] == -np.inf:
-                            rewards[index] = 0
+                        # rewards[index] = r - self.rewards.total_gain[index - 1]
+                        rewards[index] = (np.log(r / self.rewards.total_gain[index - 1]) * 100)
+                        rewards[index] = int(rewards[index] * 10 ** 3) * (10 ** -2)
+                        # if rewards[index] == -np.inf:
+                        #     rewards[index] = 0
+
+                rewards = rewards.astype(np.float32)
 
                 for t in range(0, len(trend) - 1):
                     tau = t - self.n + 1
@@ -152,12 +164,10 @@ class Base_Agent:
                         memory.append((df[tau], q[tau], r, df[tau + self.n]))
                     self.mem = memory
 
+                memory = random.sample(memory, int(self.step_size * 0.5))
                 ae = self.sample(memory).reshape((-1,))
-                idx = np.random.choice(
-                    range(len(ae)), int(self.step_size * 0.4), False, ae / np.sum(ae))
 
-                for e in idx:
-                    ae[e] = 1e-10 if ae[e] == 0.0 else np.abs(ae[e])
+                for e in range(len(ae)):
                     self.memory.store(memory[e], ae[e])
 
             if reset > 50:
@@ -165,9 +175,6 @@ class Base_Agent:
             self.lr_decay(i)
             self.gamma_updae(i)
 
-            # if self.gamma != 0.3:
-            #     self.gamma = self.gamma + (i * 1e-5)
-            #     self.gamma = min(0.3, self.gamma)
             reset += 1
 
             if i % 2000 == 0:
